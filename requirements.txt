@@ -4,3 +4,4 @@ fastapi
 numpy
 Requests
 uvicorn
+jinja2
