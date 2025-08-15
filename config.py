@@ -2,7 +2,7 @@
 Configuration file for Bluleap AI Speech-to-Text System
 """
 import os
-
+from pathlib import Path
 # URLs for downloading models and dataset
 LIBRISPEECH_URL = "https://www.openslr.org/resources/12/dev-clean.tar.gz"
 DEEPSPEECH_MODEL_URL = (
