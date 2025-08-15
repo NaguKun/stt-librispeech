@@ -1,4 +1,4 @@
-# Bluleap AI - Speech to Text System
+# Speech to Text System
 
 ## 🎯 Project Overview
 
