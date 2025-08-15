@@ -1,261 +1,49 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bluleap AI - Speech to Text</title>
-<style>
-    body {
-        margin: 0;
-        font-family: 'Segoe UI', sans-serif;
-        background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        min-height: 100vh;
-        color: #fff;
-    }
-
-    .container {
-        width: 95%;
-        max-width: 800px;
-        background: rgba(255,255,255,0.1);
-        backdrop-filter: blur(12px);
-        border-radius: 20px;
-        padding: 30px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-        animation: fadeIn 0.5s ease;
-    }
-
-    @keyframes fadeIn {
-        from {opacity: 0; transform: translateY(20px);}
-        to {opacity: 1; transform: translateY(0);}
-    }
-
-    h1 {
-        text-align: center;
-        font-weight: 300;
-        margin-bottom: 10px;
-    }
-    p {
-        text-align: center;
-        font-size: 1rem;
-        opacity: 0.9;
-    }
-
-    .upload-area {
-        border: 2px dashed rgba(255,255,255,0.6);
-        border-radius: 15px;
-        padding: 40px;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        margin: 20px 0;
-    }
-
-    .upload-area:hover,
-    .upload-area.dragover {
-        background: rgba(255,255,255,0.1);
-        border-color: #00f2fe;
-    }
-
-    .btn-group {
-        display: flex;
-        gap: 10px;
-        justify-content: center;
-        margin-bottom: 20px;
-        flex-wrap: wrap;
-    }
-
-    .btn {
-        padding: 12px 25px;
-        border: none;
-        border-radius: 25px;
-        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-        color: white;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        font-size: 1rem;
-    }
-
-    .btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(0, 242, 254, 0.4);
-    }
-
-    .btn:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-
-    .loading {
-        text-align: center;
-        display: none;
-    }
-
-    .dots {
-        display: inline-block;
-        font-size: 2rem;
-        animation: blink 1s infinite;
-    }
-
-    @keyframes blink {
-        0%, 80%, 100% { opacity: 0; }
-        40% { opacity: 1; }
-    }
-
-    .result {
-        background: rgba(255,255,255,0.15);
-        border-radius: 15px;
-        padding: 20px;
-        white-space: pre-wrap;
-        line-height: 1.6;
-        display: none;
-        animation: fadeIn 0.5s ease;
-    }
-
-    .alert {
-        text-align: center;
-        padding: 10px;
-        margin-bottom: 15px;
-        border-radius: 10px;
-        display: none;
-    }
-
-    .alert.success { background: rgba(76, 175, 80, 0.2); color: #b2ffb0; }
-    .alert.error { background: rgba(244, 67, 54, 0.2); color: #ffcdd2; }
-
-    audio {
-        margin-top: 15px;
-        width: 100%;
-    }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bluleap AI — STT Demo</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<div class="container">
-    <h1>🎤 Speech to Text</h1>
-    <p>Bluleap AI - Internship Assignment</p>
+  <div class="container">
+    <h1>Bluleap AI — Speech‑to‑Text</h1>
+    <form id="uploadForm">
+      <input type="file" id="audioFile" name="audio_file" accept="audio/*" required />
+      <button type="submit">Transcribe</button>
+    </form>
+    <div id="result" class="card hidden"></div>
+    <div class="hint">Supported: .wav .flac .mp3 .m4a .ogg (converted to 16kHz mono automatically)</div>
+  </div>
 
-    <div id="alert" class="alert"></div>
+  <script>
+    const form = document.getElementById('uploadForm');
+    const result = document.getElementById('result');
 
-    <div class="upload-area" id="uploadArea">
-        <p>📂 Drag & drop WAV file here or click to browse</p>
-        <input type="file" id="fileInput" accept=".wav" style="display: none;">
-    </div>
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      result.classList.remove('hidden');
+      result.textContent = 'Uploading & transcribing…';
 
-    <div class="btn-group">
-        <button id="uploadBtn" class="btn" disabled>Convert to Text</button>
-        <button id="sampleBtn" class="btn">Try Sample Audio</button>
-    </div>
+      const fileInput = document.getElementById('audioFile');
+      if (!fileInput.files.length) return;
 
-    <div class="loading" id="loading">
-        <span class="dots">⏳ Processing...</span>
-    </div>
+      const formData = new FormData();
+      formData.append('audio_file', fileInput.files[0]);
 
-    <div class="result" id="result"></div>
-    <audio id="audioPlayer" controls style="display:none;"></audio>
-</div>
-
-<script>
-const uploadArea = document.getElementById('uploadArea');
-const fileInput = document.getElementById('fileInput');
-const uploadBtn = document.getElementById('uploadBtn');
-const sampleBtn = document.getElementById('sampleBtn');
-const loading = document.getElementById('loading');
-const resultBox = document.getElementById('result');
-const alertBox = document.getElementById('alert');
-const audioPlayer = document.getElementById('audioPlayer');
-
-let selectedFile = null;
-
-function showAlert(msg, type='success') {
-    alertBox.textContent = msg;
-    alertBox.className = 'alert ' + type;
-    alertBox.style.display = 'block';
-}
-
-function hideAlert() {
-    alertBox.style.display = 'none';
-}
-
-function showLoading(show) {
-    loading.style.display = show ? 'block' : 'none';
-    uploadBtn.disabled = show;
-    sampleBtn.disabled = show;
-}
-
-function showResult(text) {
-    resultBox.textContent = text || '(No speech detected)';
-    resultBox.style.display = 'block';
-}
-
-uploadArea.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
-
-uploadArea.addEventListener('dragover', e => {
-    e.preventDefault();
-    uploadArea.classList.add('dragover');
-});
-uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
-uploadArea.addEventListener('drop', e => {
-    e.preventDefault();
-    uploadArea.classList.remove('dragover');
-    if (e.dataTransfer.files.length > 0) {
-        handleFile(e.dataTransfer.files[0]);
-    }
-});
-
-function handleFile(file) {
-    if (!file.name.endsWith('.wav')) {
-        showAlert('Only WAV files are supported', 'error');
-        return;
-    }
-    selectedFile = file;
-    uploadBtn.disabled = false;
-    showAlert('Selected: ' + file.name, 'success');
-}
-
-uploadBtn.addEventListener('click', async () => {
-    if (!selectedFile) return;
-    hideAlert(); showLoading(true); resultBox.style.display = 'none';
-
-    const formData = new FormData();
-    formData.append('audio_file', selectedFile);
-
-    try {
-        const res = await fetch('/upload-audio', { method: 'POST', body: formData });
-        const data = await res.json();
-        if (res.ok) {
-            showAlert('Audio converted successfully!', 'success');
-            showResult(data.text);
-        } else {
-            showAlert(data.detail || 'Error processing audio', 'error');
+      try {
+        const resp = await fetch('/upload-audio', { method: 'POST', body: formData });
+        if (!resp.ok) {
+          const err = await resp.json();
+          throw new Error(err.detail || resp.statusText);
         }
-    } catch (err) {
-        showAlert('Network error: ' + err.message, 'error');
-    } finally {
-        showLoading(false);
-    }
-});
-
-sampleBtn.addEventListener('click', async () => {
-    hideAlert(); showLoading(true); resultBox.style.display = 'none';
-    try {
-        const res = await fetch('/sample-audio');
-        const data = await res.json();
-        if (res.ok && !data.error) {
-            showAlert(`Sample audio: ${data.filename}`, 'success');
-            audioPlayer.src = data.audio_path;
-            audioPlayer.style.display = 'block';
-        } else {
-            showAlert(data.error || 'No sample audio found', 'error');
-        }
-    } catch (err) {
-        showAlert('Network error: ' + err.message, 'error');
-    } finally {
-        showLoading(false);
-    }
-});
-</script>
+        const data = await resp.json();
+        result.textContent = data.text || '(empty transcript)';
+      } catch (err) {
+        result.textContent = 'Error: ' + err.message;
+      }
+    });
+  </script>
 </body>
 </html>

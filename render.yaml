@@ -3,5 +3,9 @@ services:
     name: bluleap-stt
     env: docker
     plan: free
+    dockerfilePath: ./Dockerfile
     autoDeploy: true
-
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+    healthCheckPath: /health

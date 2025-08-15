@@ -1,22 +1,36 @@
 import os
-import requests
 import tarfile
-import zipfile
+import contextlib
+import wave
 from pathlib import Path
 from typing import Optional
-import numpy as np
-import wave
-import contextlib
 
+import numpy as np
+import requests
+import aiofiles
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import deepspeech
-import aiofiles
 
-# Import configuration
-from config import *
+from config import (
+    DATA_DIR,
+    MODEL_PATH,
+    SCORER_PATH,
+    LIBRISPEECH_DIR,
+    DEEPSPEECH_MODEL_URL,
+    DEEPSPEECH_SCORER_URL,
+    LIBRISPEECH_URL,
+    SUPPORTED_AUDIO_FORMATS,
+    MAX_FILE_SIZE,
+    MODEL_BEAM_WIDTH,
+    MODEL_ALPHA,
+    MODEL_BETA,
+    HOST,
+    PORT,
+)
+from audio_utils import ensure_wav_pcm16
 
 app = FastAPI(title="Bluleap AI - Speech to Text System", version="1.0.0")
 
@@ -29,147 +43,129 @@ os.makedirs("templates", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# Global variables for model
-model = None
-scorer = None
+# Global variable for model
+model: Optional[deepspeech.Model] = None
 
-def download_file(url: str, filepath: str) -> bool:
-    """Download a file from URL to filepath"""
-    try:
-        print(f"Downloading {url} to {filepath}")
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
-        
-        with open(filepath, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
+
+def download_file(url: str, filepath: str) -> None:
+    resp = requests.get(url, stream=True, timeout=180)
+    resp.raise_for_status()
+    tmp_path = f"{filepath}.part"
+    with open(tmp_path, "wb") as f:
+        for chunk in resp.iter_content(chunk_size=8192):
+            if chunk:
                 f.write(chunk)
-        print(f"Downloaded {filepath}")
-        return True
-    except Exception as e:
-        print(f"Error downloading {url}: {e}")
-        return False
+    os.replace(tmp_path, filepath)
 
-def download_models():
-    """Download DeepSpeech models if they don't exist"""
-    global model, scorer
-    
-    # Download model if not exists
+
+def download_models() -> None:
+    # Download model
     if not os.path.exists(MODEL_PATH):
-        print("Downloading DeepSpeech model...")
-        if not download_file(DEEPSPEECH_MODEL_URL, MODEL_PATH):
-            raise Exception("Failed to download DeepSpeech model")
-    
-    # Download scorer if not exists
+        print("Downloading DeepSpeech model…")
+        download_file(DEEPSPEECH_MODEL_URL, MODEL_PATH)
+    # Download scorer
     if not os.path.exists(SCORER_PATH):
-        print("Downloading DeepSpeech scorer...")
-        if not download_file(DEEPSPEECH_SCORER_URL, SCORER_PATH):
-            raise Exception("Failed to download DeepSpeech scorer")
-    
+        print("Downloading DeepSpeech scorer…")
+        download_file(DEEPSPEECH_SCORER_URL, SCORER_PATH)
+
     # Load model
-    print("Loading DeepSpeech model...")
-    model = deepspeech.Model(MODEL_PATH)
-    model.enableExternalScorer(SCORER_PATH)
+    global model
+    print("Loading DeepSpeech model…")
+    m = deepspeech.Model(MODEL_PATH)
+    m.setBeamWidth(MODEL_BEAM_WIDTH)
+    m.enableExternalScorer(SCORER_PATH)
+    m.setScorerAlphaBeta(MODEL_ALPHA, MODEL_BETA)
+    global model
+    model = m
     print("Model loaded successfully!")
 
-def download_librispeech():
-    """Download LibriSpeech dataset if it doesn't exist"""
-    if not os.path.exists(LIBRISPEECH_DIR):
-        print("Downloading LibriSpeech dataset...")
-        tar_path = os.path.join(DATA_DIR, "dev-clean.tar.gz")
-        
-        if not os.path.exists(tar_path):
-            if not download_file(LIBRISPEECH_URL, tar_path):
-                raise Exception("Failed to download LibriSpeech dataset")
-        
-        # Extract tar file
-        print("Extracting LibriSpeech dataset...")
-        with tarfile.open(tar_path, 'r:gz') as tar:
-            tar.extractall(DATA_DIR)
-        print("LibriSpeech dataset extracted!")
 
-def audio_to_text(audio_file_path: str) -> str:
-    """Convert audio file to text using DeepSpeech"""
-    global model
-    
+def download_librispeech() -> None:
+    if os.path.exists(LIBRISPEECH_DIR):
+        return
+    print("Downloading LibriSpeech dev-clean…")
+    tar_path = os.path.join(DATA_DIR, "dev-clean.tar.gz")
+    if not os.path.exists(tar_path):
+        download_file(LIBRISPEECH_URL, tar_path)
+    print("Extracting LibriSpeech…")
+    with tarfile.open(tar_path, "r:gz") as tar:
+        tar.extractall(DATA_DIR)
+
+
+def stt_from_wav(wav_path: str) -> str:
     if model is None:
-        raise Exception("Model not loaded")
-    
-    # Read audio file
-    with contextlib.closing(wave.open(audio_file_path, 'rb')) as wf:
+        raise RuntimeError("Model not loaded")
+    with contextlib.closing(wave.open(wav_path, "rb")) as wf:
         frames = wf.getnframes()
-        sample_rate = wf.getframerate()
-        audio_data = wf.readframes(frames)
-    
-    # Convert to numpy array
-    audio = np.frombuffer(audio_data, dtype=np.int16)
-    
-    # Perform speech recognition
-    text = model.stt(audio)
-    return text
+        audio = np.frombuffer(wf.readframes(frames), dtype=np.int16)
+    return model.stt(audio)
+
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize models and dataset on startup"""
     try:
         download_models()
         download_librispeech()
     except Exception as e:
-        print(f"Error during startup: {e}")
+        print(f"Startup error: {e}")
+
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    """Main page with HTML interface"""
     return templates.TemplateResponse("index.html", {"request": request})
+
 
 @app.post("/upload-audio")
 async def upload_audio(audio_file: UploadFile = File(...)):
-    """Upload and process audio file"""
-    if not audio_file.filename.endswith('.wav'):
-        raise HTTPException(status_code=400, detail="Only WAV files are supported")
-    
-    # Save uploaded file temporarily
-    temp_path = f"temp_{audio_file.filename}"
+    ext = Path(audio_file.filename).suffix.lower()
+    if ext not in SUPPORTED_AUDIO_FORMATS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type {ext}. Supported: {SUPPORTED_AUDIO_FORMATS}",
+        )
+
+    temp_in = Path(f"/tmp/in_{os.getpid()}_{audio_file.filename}")
     try:
-        async with aiofiles.open(temp_path, 'wb') as f:
+        async with aiofiles.open(temp_in, "wb") as f:
             content = await audio_file.read()
+            if len(content) > MAX_FILE_SIZE:
+                raise HTTPException(status_code=413, detail="File too large")
             await f.write(content)
-        
-        # Convert audio to text
-        text = audio_to_text(temp_path)
-        
+
+        wav_path, created = ensure_wav_pcm16(str(temp_in))
+        try:
+            text = stt_from_wav(wav_path)
+        finally:
+            if created and os.path.exists(wav_path):
+                os.remove(wav_path)
+
         return {"text": text, "filename": audio_file.filename}
-    
     finally:
-        # Clean up temporary file
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        if os.path.exists(temp_in):
+            os.remove(temp_in)
+
 
 @app.get("/sample-audio")
 async def get_sample_audio():
-    """Get a sample audio file from LibriSpeech for testing"""
-    try:
-        # Find first available audio file
-        for root, dirs, files in os.walk(LIBRISPEECH_DIR):
-            for file in files:
-                if file.endswith('.flac'):
-                    audio_path = os.path.join(root, file)
-                    # Convert flac to wav for easier processing
-                    wav_path = audio_path.replace('.flac', '.wav')
-                    
-                    # Use ffmpeg if available, otherwise return path
-                    if os.path.exists(wav_path):
-                        return {"audio_path": wav_path, "filename": os.path.basename(wav_path)}
-                    else:
-                        return {"audio_path": audio_path, "filename": os.path.basename(audio_path)}
-        
-        return {"error": "No audio files found"}
-    except Exception as e:
-        return {"error": str(e)}
+    # Return the first FLAC/WAV found in LibriSpeech and its on-the-fly transcript
+    for root, _, files in os.walk(LIBRISPEECH_DIR):
+        for file in files:
+            if file.lower().endswith((".flac", ".wav")):
+                src = os.path.join(root, file)
+                wav_path, created = ensure_wav_pcm16(src)
+                try:
+                    text = stt_from_wav(wav_path)
+                finally:
+                    if created and os.path.exists(wav_path) and not src.endswith(".wav"):
+                        os.remove(wav_path)
+                return {"sample_file": file, "transcript": text}
+    return {"error": "No audio files found in LibriSpeech/dev-clean"}
+
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
     return {"status": "healthy", "model_loaded": model is not None}
+
 
 if __name__ == "__main__":
     import uvicorn
