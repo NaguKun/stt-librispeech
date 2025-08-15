@@ -1,0 +1,6 @@
+aiofiles==24.1.0
+deepspeech==0.9.3
+fastapi==0.116.1
+numpy==2.3.2
+Requests==2.32.4
+uvicorn==0.35.0
