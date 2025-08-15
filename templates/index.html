@@ -4,27 +4,55 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bluleap AI — STT Demo</title>
-  <link rel="stylesheet" href="style.css" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background: linear-gradient(135deg, #007bff, #6610f2);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      border-radius: 15px;
+      box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+    }
+    .result-box {
+      white-space: pre-wrap;
+      font-size: 1rem;
+    }
+  </style>
 </head>
 <body>
   <div class="container">
-    <h1>Bluleap AI — Speech‑to‑Text</h1>
-    <form id="uploadForm">
-      <input type="file" id="audioFile" name="audio_file" accept="audio/*" required />
-      <button type="submit">Transcribe</button>
-    </form>
-    <div id="result" class="card hidden"></div>
-    <div class="hint">Supported: .wav .flac .mp3 .m4a .ogg (converted to 16kHz mono automatically)</div>
+    <div class="card p-4">
+      <h2 class="text-center mb-4 text-primary fw-bold">🎙 Bluleap AI — Speech-to-Text</h2>
+      <form id="uploadForm" class="mb-3">
+        <div class="mb-3">
+          <label for="audioFile" class="form-label fw-semibold">Chọn file âm thanh</label>
+          <input type="file" id="audioFile" name="audio_file" accept="audio/*" required class="form-control" />
+        </div>
+        <button type="submit" class="btn btn-primary w-100">
+          <span id="btnText">Transcribe</span>
+          <div id="loadingSpinner" class="spinner-border spinner-border-sm ms-2 d-none" role="status"></div>
+        </button>
+      </form>
+      <div id="result" class="alert alert-secondary result-box d-none"></div>
+      <p class="text-muted text-center small">Supported: .wav .flac .mp3 .m4a .ogg (auto convert to 16kHz mono)</p>
+    </div>
   </div>
 
   <script>
     const form = document.getElementById('uploadForm');
     const result = document.getElementById('result');
+    const btnText = document.getElementById('btnText');
+    const spinner = document.getElementById('loadingSpinner');
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      result.classList.remove('hidden');
-      result.textContent = 'Uploading & transcribing…';
+      result.classList.add('d-none');
+      btnText.textContent = 'Processing...';
+      spinner.classList.remove('d-none');
 
       const fileInput = document.getElementById('audioFile');
       if (!fileInput.files.length) return;
@@ -40,10 +68,18 @@
         }
         const data = await resp.json();
         result.textContent = data.text || '(empty transcript)';
+        result.classList.remove('d-none');
       } catch (err) {
-        result.textContent = 'Error: ' + err.message;
+        result.textContent = '❌ Error: ' + err.message;
+        result.classList.remove('d-none');
+        result.classList.replace('alert-secondary', 'alert-danger');
+      } finally {
+        btnText.textContent = 'Transcribe';
+        spinner.classList.add('d-none');
       }
     });
   </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
