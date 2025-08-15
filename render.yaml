@@ -1,14 +1,7 @@
 services:
   - type: web
     name: bluleap-stt
-    env: python
+    env: docker
     plan: free
-    pythonVersion: 3.8.18
-    buildCommand: |
-      pip install --upgrade pip
-      pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.7.12
     autoDeploy: true
+
